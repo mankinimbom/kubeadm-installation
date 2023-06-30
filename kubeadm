@@ -1,0 +1,112 @@
+In this video tutorial, we will show you how to setup Kubernetes cluster step by step. 
+
+Kubernetes is an open-source container orchestration platform that automates the deployment, scaling, and management of containerized applications. It allows you to easily manage your applications and services, and provides you with a highly scalable and fault-tolerant infrastructure.
+
+########### Kubernetes Install steps ###################
+
+1) Update host entries, disable swap and add kernel parameters.
+
+192.168.1.190   k8smaster.example.com k8smaster
+192.168.1.191   k8sworker.example.com k8sworker
+
+sudo swapoff -a
+sudo sed -i '/ swap / s/^\(.*\)$/#\1/g' /etc/fstab
+
+sudo vi  /etc/modules-load.d/containerd.conf 
+overlay
+br_netfilter
+save and close the file 
+
+sudo modprobe overlay
+sudo modprobe br_netfilter
+
+sudo vi /etc/sysctl.d/kubernetes.conf 
+net.bridge.bridge-nf-call-ip6tables = 1
+net.bridge.bridge-nf-call-iptables = 1
+net.ipv4.ip_forward = 1 
+
+Reload the above kernel parameters 
+
+sudo sysctl --system
+
+2) Install Containerd and Enable Kubernetes repository.
+
+sudo apt install -y curl gnupg2 software-properties-common apt-transport-https ca-certificates
+
+Enable Docker Repository, 
+sudo curl -fsSL https://download.docker.com/linux/ubu... | sudo gpg --dearmour -o /etc/apt/trusted.gpg.d/docker.gpg
+sudo add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable"
+
+Now, install containerd
+
+sudo apt update && sudo apt install -y containerd.io
+
+Configure containerd so that it starts using systemd as cgroup.
+
+containerd config default | sudo tee /etc/containerd/config.toml 
+sudo sed -i 's/SystemdCgroup \= false/SystemdCgroup \= true/g' /etc/containerd/config.toml
+
+sudo systemctl restart containerd && sudo systemctl enable containerd
+
+3) Install kubeadm, kubectl and kubelet.
+
+curl -s https://packages.cloud.google.com/apt... | sudo gpg --dearmour -o /etc/apt/trusted.gpg.d/kubernetes-xenial.gpg
+sudo apt-add-repository "deb http://apt.kubernetes.io/ kubernetes-xenial main"
+
+sudo apt update && sudo apt install -y kubelet kubeadm kubectl && sudo apt-mark hold kubelet kubeadm kubectl
+
+4) Initialize Kubernetes cluster
+
+sudo kubeadm init --control-plane-endpoint=k8smaster.example.com
+
+It may take 4 to 5 minutes depending on the internet speed,
+
+So, to interact with cluster, copy paste commands from the output
+
+mkdir -p $HOME/.kube
+sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+sudo chown $(id -u):$(id -g) $HOME/.kube/config
+
+Run kubectl command, 
+
+kubectl cluster-info
+kubectl get nodes
+
+5) Add worker node to cluster & install calico cni
+
+sudo kubeadm join k8smaster.example.net:6443  ( Copy the command from kubeadm command's output)
+
+Install Calico CNI 
+
+kubectl apply -f https://raw.githubusercontent.com/pro...
+
+verify calico pods
+
+kubectl get pods -n kube-system
+
+Now nodes should be Ready State, run 
+
+kubectl get nodes
+
+6) Test Kubernetes cluster installation.
+
+To test Kubernetes installation, let’s try to deploy nginx based application and try to access it.
+
+kubectl create deployment nginx-app --image=nginx --replicas=2
+
+Verify Deployment and pods status, 
+
+kubectl get deployment nginx-app
+kubectl get pods 
+
+Expose the deployment, 
+
+kubectl expose deployment nginx-app --type=NodePort --port=80
+
+Verify the service status, 
+
+kubectl get svc nginx-app && kubectl describe svc nginx-app
+
+Access nginx application using worker IP and nodeport
+
+curl http://worker-ip-address:nodeport
